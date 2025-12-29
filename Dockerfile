@@ -1,51 +1,19 @@
-# Use Python 3.11 slim image
-FROM python:3.11-slim
+# Use official Playwright image with Python
+FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies required for Playwright Chromium
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libnss3 \
-    libnspr4 \
-    libdbus-1-3 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libpango-1.0-0 \
-    libcairo2 \
-    libasound2 \
-    libatspi2.0-0 \
-    libxshmfence1 \
-    libx11-6 \
-    libxcb1 \
-    libxext6 \
-    libglib2.0-0 \
-    wget \
-    ca-certificates \
-    fonts-liberation \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements first for better caching
+# Copy requirements
 COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers (just chromium, no deps since we installed them above)
-RUN python -m playwright install chromium
-
-# Copy application code
+# Copy entire application
 COPY . .
 
-# Create necessary data directories with proper permissions
+# Create necessary data directories
 RUN mkdir -p data/temp data/links data/results data/linkedin && \
     chmod -R 755 data
 
