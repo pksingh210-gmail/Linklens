@@ -1,0 +1,60 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Data directories (don't copy existing data to image)
+data/temp/*
+data/links/*
+data/results/*
+data/linkedin/*
+
+# Keep directory structure but ignore contents
+!data/temp/.gitkeep
+!data/links/.gitkeep
+!data/results/.gitkeep
+!data/linkedin/.gitkeep
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation
+*.md
+!README.md
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
