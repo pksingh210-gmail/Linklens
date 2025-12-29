@@ -1,13 +1,12 @@
 # ---------------- app.py ----------------
-from flask import Flask, render_template, request, redirect, url_for, session, Response, flash, send_file, jsonify, copy_current_request_context
+from flask import Flask, render_template, request, redirect, url_for, session, Response, flash, send_file, jsonify
 import threading
 import logging
 import queue
 import pandas as pd
 import io
-import webbrowser
 import os
-import re  # <-- CRITICAL: Add this import
+import re
 from pathlib import Path
 from datetime import datetime
 
@@ -25,9 +24,9 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-producti
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR) 
 
-# Fix URL building in background threads
-app.config["SERVER_NAME"] = "127.0.0.1:5000"
-app.config["PREFERRED_URL_SCHEME"] = "http"
+# ❌ REMOVED - These lines break production deployments!
+# app.config["SERVER_NAME"] = "127.0.0.1:5000"
+# app.config["PREFERRED_URL_SCHEME"] = "http"
 
 # ---------------- LinkedIn Scraper Globals ----------------
 status_queue = queue.Queue()
@@ -50,12 +49,7 @@ def push_status(message):
     status_queue.put(f"[{timestamp}] {message}")
 
 def timestamped_filename(base_name, ext=None, folder=None):
-    """
-    Generate a timestamped filename.
-    Example:
-      timestamped_filename("results.xlsx")
-      timestamped_filename("profile", ext="html")
-    """
+    """Generate a timestamped filename."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     if ext:
@@ -73,23 +67,10 @@ def timestamped_filename(base_name, ext=None, folder=None):
     return filename
 
 def enrich_df_with_contact_info(df, linkedin_cookies, status_cb=None, max_retries=2):
-    """
-    Enrich DataFrame with Email and Phone columns using LinkedIn contact overlay.
-    Safe to re-run. Does not drop or modify any existing columns.
-    
-    Args:
-        df (pd.DataFrame): DataFrame with profile data
-        linkedin_cookies (dict): Authenticated LinkedIn cookies
-        status_cb (callable): Optional callback for status updates
-        max_retries (int): Number of retry attempts per profile
-        
-    Returns:
-        pd.DataFrame: DataFrame with added 'Email' and 'Phone' columns
-    """
+    """Enrich DataFrame with Email and Phone columns using LinkedIn contact overlay."""
     if status_cb:
         status_cb("📇 Starting contact info enrichment...")
     
-    # Debug: Check cookies
     if not linkedin_cookies:
         if status_cb:
             status_cb("⚠️ WARNING: No cookies provided! Contact enrichment will be skipped.")
@@ -113,11 +94,9 @@ def enrich_df_with_contact_info(df, linkedin_cookies, status_cb=None, max_retrie
     error_count = 0
 
     for idx, row in df.iterrows():
-        # DEBUG: Print all column names on first iteration
         if idx == 0 and status_cb:
             status_cb(f"🔍 DEBUG: DataFrame columns: {list(df.columns)}")
         
-        # Try multiple possible column names for profile URL
         profile_url = (
             row.get("ProfileLink")
             or row.get("profile_url")
@@ -127,18 +106,14 @@ def enrich_df_with_contact_info(df, linkedin_cookies, status_cb=None, max_retrie
             or ""
         )
         
-        # DEBUG: Show what we found
         if idx == 0 and status_cb:
             status_cb(f"🔍 DEBUG: First profile URL: {profile_url}")
 
-        # Default empty values (preserve row alignment)
         email_val = ""
         phone_val = ""
 
-        # Extract vanity ID from profile URL
         vanity_id = ""
         if profile_url:
-            # Handle various LinkedIn URL formats
             match = re.search(r'linkedin\.com/in/([^/\?]+)', profile_url)
             if match:
                 vanity_id = match.group(1)
@@ -148,14 +123,12 @@ def enrich_df_with_contact_info(df, linkedin_cookies, status_cb=None, max_retrie
                 if status_cb:
                     status_cb(f"⚠️ Could not extract vanity ID from: {profile_url}")
 
-        # Skip if already enriched (important for re-runs)
         if row.get("Email") or row.get("Phone"):
             emails_col.append(row.get("Email", ""))
             phones_col.append(row.get("Phone", ""))
             skip_count += 1
             continue
 
-        # Attempt to extract contact info if we have credentials and vanity ID
         if linkedin_cookies and vanity_id:
             for attempt in range(1, max_retries + 1):
                 try:
@@ -164,7 +137,6 @@ def enrich_df_with_contact_info(df, linkedin_cookies, status_cb=None, max_retrie
                     
                     contact = get_contact_info_for_profile(vanity_id, linkedin_cookies)
                     
-                    # Join multiple emails/phones with comma separator
                     email_val = ", ".join(contact.get("emails", []))
                     phone_val = ", ".join(contact.get("phones", []))
 
@@ -181,7 +153,7 @@ def enrich_df_with_contact_info(df, linkedin_cookies, status_cb=None, max_retrie
                         if status_cb:
                             status_cb(f"ℹ️  No contact info found for {vanity_id}")
 
-                    break  # Success, exit retry loop
+                    break
 
                 except Exception as e:
                     error_count += 1
@@ -191,16 +163,14 @@ def enrich_df_with_contact_info(df, linkedin_cookies, status_cb=None, max_retrie
                         if status_cb:
                             status_cb(f"⚠️ Retry {attempt}/{max_retries} for {vanity_id}")
                         import time
-                        time.sleep(2)  # Wait before retry
+                        time.sleep(2)
                     else:
-                        # Final attempt failed
                         if status_cb:
                             status_cb(f"❌ Failed {vanity_id}: {error_msg[:80]}")
 
         emails_col.append(email_val)
         phones_col.append(phone_val)
 
-    # Add or update columns
     df["Email"] = emails_col
     df["Phone"] = phones_col
 
@@ -224,7 +194,7 @@ def background_linkedin_scraper(params):
     push_status("🔍 Starting LinkedIn Scraper...")
     
     login_scraper = None
-    linkedin_cookies = {}  # Initialize here
+    linkedin_cookies = {}
     
     try:
         username = params.get("username")
@@ -240,7 +210,7 @@ def background_linkedin_scraper(params):
             push_status("❌ Missing LinkedIn username or password")
             return
 
-        # ------------------ LOGIN ------------------
+        # LOGIN
         login_scraper = LinkedInLogin(headless=headless, status_callback=push_status)
         login_scraper.login(username, password)
         
@@ -248,14 +218,12 @@ def background_linkedin_scraper(params):
             push_status("❌ Login failed. Cannot proceed.")
             return
         
-        # Extract cookies for contact enrichment
         linkedin_cookies = login_scraper.cookies
         push_status(f"✅ Login successful, extracted {len(linkedin_cookies)} cookies for contact enrichment")
 
-        # ------------------ COLLECT LINKS ------------------
+        # COLLECT LINKS
         links = []
 
-        # Use uploaded Excel if provided and mode is HTML Only or HTML+Data
         if excel_path and mode in ["html_only", "html_and_data"]:
             try:
                 df_links = pd.read_excel(excel_path)
@@ -267,7 +235,6 @@ def background_linkedin_scraper(params):
             except Exception as e:
                 push_status(f"❌ Failed to read Excel file: {e}")
 
-        # Fallback: collect links via LinkedIn search if empty
         if not links and mode in ["full", "html_only", "html_and_data"]:
             search_scraper = LinkedInSearch(login_scraper.page, status_callback=push_status)
             links = search_scraper.collect_profile_links(
@@ -277,7 +244,6 @@ def background_linkedin_scraper(params):
                 city=city
             )
             
-            # Save collected links to Excel file
             if links:
                 links_filename = timestamped_filename(f"links_{job_title}_{city}_{country}", ".xlsx")
                 links_path = LINKS_DIR / links_filename
@@ -285,7 +251,7 @@ def background_linkedin_scraper(params):
                 df_links.to_excel(links_path, index=False)
                 push_status(f"💾 Saved {len(links)} links to: {links_path}")
 
-        # ------------------ HTML ONLY ------------------
+        # HTML ONLY
         if mode == "html_only":
             if links:
                 html_scraper = LinkedInHTML(login_scraper.page, status_callback=push_status)
@@ -300,12 +266,11 @@ def background_linkedin_scraper(params):
             else:
                 push_status("⚠️ No links to process for HTML collection")
 
-        # ------------------ DATA ONLY ------------------
+        # DATA ONLY
         elif mode == "data_only":
             push_status("📄 Parsing existing HTML for data extraction...")
             df = parse_all_html(role=job_title, loc=city or country)
             
-            # CRITICAL: Enrich with email & phone BEFORE saving
             push_status(f"📇 Starting contact enrichment for {len(df)} profiles...")
             df = enrich_df_with_contact_info(df, linkedin_cookies=linkedin_cookies, status_cb=push_status)
 
@@ -315,11 +280,11 @@ def background_linkedin_scraper(params):
             df.to_excel(results_path, index=False)
             push_status(f"💾 Data extraction complete. Results saved: {results_path}")
             push_status(f"DATA_FILE:{results_path}")
-            with app.app_context():
-                push_status(f"DOWNLOAD:{url_for('download_file', folder='results', filename=results_filename)}")
+            # ✅ FIXED: No app context needed
+            push_status(f"DOWNLOAD:/download_file/results/{results_filename}")
             push_status("RESULTS_READY")
 
-        # ------------------ HTML + DATA ------------------
+        # HTML + DATA
         elif mode == "html_and_data":
             if links:
                 html_scraper = LinkedInHTML(login_scraper.page, status_callback=push_status)
@@ -334,11 +299,9 @@ def background_linkedin_scraper(params):
             else:
                 push_status("⚠️ No links to process for HTML collection")
 
-            # After saving HTML, parse for data
             push_status("📄 Parsing HTML for data extraction...")
             df = parse_all_html(role=job_title, loc=city or country)
             
-            # CRITICAL: Enrich with email & phone BEFORE saving
             push_status(f"📇 Starting contact enrichment for {len(df)} profiles...")
             df = enrich_df_with_contact_info(df, linkedin_cookies=linkedin_cookies, status_cb=push_status)
 
@@ -348,12 +311,11 @@ def background_linkedin_scraper(params):
             df.to_excel(results_path, index=False)
             push_status(f"💾 Data extraction complete. Results saved: {results_path}")
             push_status(f"DATA_FILE:{results_path}")
-            with app.app_context():
-                push_status(f"DOWNLOAD:{url_for('download_file', folder='results', filename=results_filename)}")
+            push_status(f"DOWNLOAD:/download_file/results/{results_filename}")
             push_status("RESULTS_READY")
 
-        # ------------------ FULL MODE (default) ------------------
-        else:  # mode == "full"
+        # FULL MODE
+        else:
             if links:
                 html_scraper = LinkedInHTML(login_scraper.page, status_callback=push_status)
                 html_count = 0
@@ -367,11 +329,9 @@ def background_linkedin_scraper(params):
             else:
                 push_status("⚠️ No links to process")
 
-            # After saving HTML, parse for data
             push_status("📄 Parsing HTML for data extraction...")
             df = parse_all_html(role=job_title, loc=city or country)
             
-            # CRITICAL: Enrich with email & phone BEFORE saving
             push_status(f"📇 Starting contact enrichment for {len(df)} profiles...")
             df = enrich_df_with_contact_info(df, linkedin_cookies=linkedin_cookies, status_cb=push_status)
 
@@ -381,8 +341,7 @@ def background_linkedin_scraper(params):
             df.to_excel(results_path, index=False)
             push_status(f"💾 Data extraction complete. Results saved: {results_path}")
             push_status(f"DATA_FILE:{results_path}")
-            with app.app_context():
-                push_status(f"DOWNLOAD:{url_for('download_file', folder='results', filename=results_filename)}")
+            push_status(f"DOWNLOAD:/download_file/results/{results_filename}")
             push_status("RESULTS_READY")
 
         push_status("✅ Scraping completed successfully!")
@@ -398,7 +357,16 @@ def background_linkedin_scraper(params):
             scraper_active = False
 
 # ------------------- ROUTES -------------------
-@app.route("/", methods=["GET","POST"])
+@app.route("/health")
+def health():
+    """Health check endpoint"""
+    return {"status": "ok", "app": "LinkLens Agent"}, 200
+
+@app.route("/")
+def index():
+    """Redirect root to login"""
+    return redirect(url_for("login"))
+
 @app.route("/login", methods=["GET","POST"])
 def login():
     error = None
@@ -490,7 +458,6 @@ def dashboard():
         headless = "headless" in request.form
         scraper_mode = request.form.get("scraper_mode", "full")
 
-        # Handle uploaded Excel file
         uploaded_file = request.files.get("input_excel")
         excel_path = None
         if uploaded_file and uploaded_file.filename:
