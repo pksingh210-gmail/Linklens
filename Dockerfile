@@ -31,7 +31,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
     fonts-liberation \
-    fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -40,8 +39,8 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers using Python module syntax
-RUN python -m playwright install --with-deps chromium
+# Install Playwright browsers (just chromium, no deps since we installed them above)
+RUN python -m playwright install chromium
 
 # Copy application code
 COPY . .
@@ -58,17 +57,11 @@ ENV FLASK_APP=app.py \
 # Expose port
 EXPOSE 5000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:5000/login', timeout=5)" || exit 1
-
 # Start command
 CMD gunicorn --bind 0.0.0.0:${PORT} \
     --workers 3 \
     --threads 8 \
     --timeout 600 \
-    --max-requests 1000 \
-    --max-requests-jitter 50 \
     --access-logfile - \
     --error-logfile - \
     app:app
