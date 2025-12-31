@@ -1,60 +1,49 @@
-# Python cache
+# .gitignore - UPDATED VERSION
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-
-# Virtual environments
-venv/
 env/
+venv/
 ENV/
-.venv
+build/
+dist/
+*.egg-info/
+
+# Flask
+instance/
+.webassets-cache
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Git
-.git/
-.gitignore
+# Logs
+*.log
 
-# Data directories (don't copy existing data to image)
+# Environment
+.env
+
+# IMPORTANT: Only ignore temp data, NOT session files
 data/temp/*
 data/links/*
 data/results/*
-data/linkedin/*
 
-# Keep directory structure but ignore contents
+# KEEP linkedin sessions - they should be committed
+# data/linkedin/  ← REMOVE THIS LINE IF IT EXISTS
+
+# Keep folder structure
+!data/.gitkeep
 !data/temp/.gitkeep
 !data/links/.gitkeep
 !data/results/.gitkeep
 !data/linkedin/.gitkeep
-
-# Logs
-*.log
-
-# Environment files
-.env
-.env.local
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Documentation
-*.md
-!README.md
-
-# Docker
-Dockerfile
-.dockerignore
-docker-compose.yml
