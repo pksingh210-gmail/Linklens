@@ -651,7 +651,7 @@ def parse_html(html, file_name):
         "Location": Location,
         "Skills": "\n".join(f"• {s}" for s in Skills) if Skills else "Not found",
         "Experience": format_experience_bullets(Experience),
-        "Source_URL": url
+        "ProfileLink": url
     }
 
 
@@ -708,7 +708,7 @@ def parse_all_html(move_files=False, role="", loc=""):
                     reasons.append("Missing skills")
                 if not has_experience:
                     reasons.append("Missing experience")
-                print(f"⚠️ Rejected: {parsed['Name']} - {', '.join(reasons)}")
+                #print(f"⚠️ Rejected: {parsed['Name']} - {', '.join(reasons)}")
                 continue
 
             results.append(parsed)
@@ -727,15 +727,11 @@ def parse_all_html(move_files=False, role="", loc=""):
         print("❌ No accepted profiles found")
         return pd.DataFrame()
 
-    desired_order = ["Name", "Title", "Company", "Location", "Skills", "Experience", "Source_URL"]
+    desired_order = ["Name", "Title", "Company", "Location", "Skills", "Experience", "ProfileLink"]
 
     df = pd.DataFrame(results)
     df = df.reindex(columns=desired_order)
     df.insert(0, "#", range(1, len(df) + 1))
-    
-    # ADDED: Add ProfileLink column for contact enrichment
-    if "Source_URL" in df.columns:
-        df["ProfileLink"] = df["Source_URL"]
 
     print(f"✅ Parsed {len(html_files)} profiles, {len(results)} accepted")
     return df
