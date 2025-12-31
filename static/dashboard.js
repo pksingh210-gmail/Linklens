@@ -56,7 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
             window.scraperRunning = true;
             runBtn.disabled = true;
             showSpinner();
-            appendStatus('⏳ Scraper running...');
+            //appendStatus('⏳ Scraper running...');
             
             // Submit form via AJAX to prevent page reload
             const formData = new FormData(form);
@@ -88,7 +88,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     .then(r => r.json())
                     .then(j => {
                         renderResultsTable(j.results || []);
-                        appendStatus('✅ Results loaded into table.');
+                        //appendStatus('✅ Results loaded into table.');
                         window.scraperRunning = false;
                         hideSpinner();
                         runBtn.disabled = false;
@@ -150,7 +150,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const columnOrder = [
             '#', 'Name', 'Title', 'Company',
-            'Location', 'Email', 'Phone', 'Skills', 'Experience', 'Source_URL'
+            'Location', 'Email', 'Phone', 'Skills', 'Experience', 'ProfileLink'
         ];
 
         const wrapper = document.createElement('div');
@@ -309,6 +309,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 maxResultsValue.textContent = maxResultsSlider.value;
             }
 
+            fetch("/reset_app", { method: "POST" });
+
             console.log("✅ Form reset completed");
         });
     }
@@ -337,3 +339,4 @@ async function pollResults() {
 
 // Uncomment to enable polling
 // setInterval(pollResults, 2000);
+
