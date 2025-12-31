@@ -1,26 +1,17 @@
-"""
-LinkedIn Contact Info Extraction Module
-Extracts email and phone numbers from LinkedIn profile contact overlay
-"""
-
 import re
 import requests
 from bs4 import BeautifulSoup
 import time
 
-
 def get_contact_info_for_profile(vanity_id, cookies, timeout=30):
     """
     Scrape contact information (email, phone) for a LinkedIn profile.
-    
     Args:
         vanity_id (str): LinkedIn profile vanity ID (e.g., 'johnsmith')
         cookies (dict): Dictionary of LinkedIn cookies (must include 'li_at')
-        timeout (int): Request timeout in seconds
-        
+        timeout (int): Request timeout in seconds   
     Returns:
         dict: Contains 'emails' and 'phones' lists, plus 'phone_sources' for debugging
-        
     Raises:
         Exception: If profile load fails or cookies are invalid
     """
@@ -91,7 +82,6 @@ def get_contact_info_for_profile(vanity_id, cookies, timeout=30):
             raise Exception(f"Failed to access any LinkedIn page: {e}")
 
     return parse_contact_from_html(html_to_parse)
-
 
 def parse_contact_from_html(html):
     """
@@ -263,5 +253,5 @@ def format_contact_info(contact_info):
             lines.append(f"   • {phone}   (from {source})")
     else:
         lines.append("\n📞 PHONES: None found")
-    
     return "\n".join(lines)
+
