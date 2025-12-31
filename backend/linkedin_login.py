@@ -29,10 +29,10 @@ class LinkedInLogin:
             time.sleep(3)
             if "feed" in self.page.url or "/in/" in self.page.url:
                 self.logged_in = True
-                self.status_callback("✅ Reused saved login session")
+                #self.status_callback("✅ Reused saved login session")
                 return
-            else:
-                self.status_callback("⚠️ Saved session invalid, logging in fresh...")
+            #else:
+                #self.status_callback("⚠️ Saved session invalid, logging in fresh...")
 
         # If no valid session, create fresh context and page
         self.context = self.browser.new_context()
@@ -79,7 +79,7 @@ class LinkedInLogin:
                 self.context.close()
             self.browser.close()
             self.playwright.stop()
-            self.status_callback("✅ Playwright browser closed")
+            #self.status_callback("✅ Playwright browser closed")
         except Exception as e:
             self.status_callback(f"⚠️ Error closing browser: {e}")
     
