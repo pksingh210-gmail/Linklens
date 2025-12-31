@@ -179,25 +179,25 @@
             <form method="POST" enctype="multipart/form-data">
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
                     <!-- Left: Heading -->
-                    <h3 style="margin-top:0;">Profile Scraper</h3>
+                    <h3 style="margin-top:0;">Profile Scraping Agent</h3>
 
                     <!-- Right: Mode + File Input (right aligned) -->
                     <div style="display:flex; flex-direction:column; align-items:flex-end;">
 
-                        <!-- Label -->
+                        <!-- Label
                         <label for="scraper_mode"
                             style="font-size:14px; font-weight:700; color:#0a3d91; margin-bottom:2px;">
                             Scraper Mode
-                        </label>
+                        </label>  --->
 
-                        <!-- Dropdown -->
+                        <!-- Dropdown 
                         <select name="scraper_mode" id="scraper_mode"
                             style="font-size:12px; width:120px; margin-bottom:6px;">
                             <option value="full" {% if last_inputs and last_inputs.scraper_mode=='full' %}selected{% endif %}>Full</option>
                             <option value="html_only" {% if last_inputs and last_inputs.scraper_mode=='html_only' %}selected{% endif %}>HTML Only</option>
                             <option value="data_only" {% if last_inputs and last_inputs.scraper_mode=='data_only' %}selected{% endif %}>Data Only</option>
                             <option value="html_and_data" {% if last_inputs and last_inputs.scraper_mode=='html_and_data' %}selected{% endif %}>HTML and Data</option>
-                        </select>
+                        </select>--->
 
                         <!-- File upload box -->
                         <div id="file_input_container"
@@ -271,7 +271,7 @@
                 </div>
 
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
-                    <button id="run-btn" type="submit" class="btn btn-primary">Run Scraper</button>
+                    <button id="run-btn" type="submit" class="btn btn-primary">Run Agent</button>
                     <button id="reset-btn" type="button" class="btn btn-secondary">Reset</button>
                 </div>
 
@@ -319,12 +319,11 @@
                                 <th>Title</th>
                                 <th>Company</th>
                                 <th>Location</th>
-                                <!-- NEW COLUMNS -->
                                 <th>Email</th>
                                 <th>Phone</th>
                                 <th>Skills</th>
                                 <th>Experience</th>
-                                <th>Source_URL</th>
+                                <th>"ProfileLink"</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -343,7 +342,7 @@
                                 <td class="expandable-cell" data-full-content="{{ row.get('Experience', '') }}">
                                     {{ (row.get('Experience', '')[:30] + '...') if row.get('Experience', '')|length > 30 else row.get('Experience', '') }}
                                 </td>
-                                <td><a href="{{ row.get('Source_URL', '#') }}" target="_blank">View Profile</a></td>
+                                <td><a href="{{ row.get('ProfileLink', '#') }}" target="_blank">View Profile</a></td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -356,17 +355,17 @@
                     </a>
                 </div>
 
-                {% if status_html_count %}
+                <!---{% if status_html_count %}
                 <div class="small" style="margin-top:8px;color:darkgreen;">
                     💾 {{ status_html_count }} HTML files saved to <strong>{{ temp_folder }}</strong>
                 </div>
-                {% endif %}
+                {% endif %} -->
 
-                {% if final_data_file %}
+                <!--{% if final_data_file %}
                 <div class="small" style="margin-top:4px;color:blue;">
                     📄 Final data file saved at <strong>{{ final_data_file }}</strong>
-                </div>
-                {% endif %}
+                </div> 
+                {% endif %}-->
 
                 {% else %}
                 <p class="small" id="no-results">No results yet. Run the scraper to collect data.</p>
