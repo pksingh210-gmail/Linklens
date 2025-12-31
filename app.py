@@ -29,8 +29,8 @@ log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR) 
 
 # Fix URL building in background threads
-app.config["SERVER_NAME"] = "127.0.0.1:5000"
-app.config["PREFERRED_URL_SCHEME"] = "http"
+# app.config["SERVER_NAME"] = "127.0.0.1:5000"
+# app.config["PREFERRED_URL_SCHEME"] = "http"
 
 # ---------------- LinkedIn Scraper Globals ----------------
 status_queue = queue.Queue()
@@ -651,4 +651,5 @@ signal.signal(signal.SIGTERM, handle_signal)  # Kill process
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
 
