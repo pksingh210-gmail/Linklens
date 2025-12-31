@@ -18,24 +18,35 @@ RUN playwright install-deps chromium
 COPY . .
 
 # Create necessary data directories with proper permissions
-RUN mkdir -p data/temp data/links data/results data/linkedin && \
-    chmod -R 755 data
+RUN mkdir -p data/temp data/links data/results data/linkedin auth && \
+    chmod -R 777 data auth
+
+# Create empty auth/users.json if it doesn't exist
+RUN echo '[]' > auth/users.json && chmod 666 auth/users.json
 
 # Set environment variables
 ENV FLASK_APP=app.py \
     PYTHONUNBUFFERED=1 \
     PORT=5000 \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    HOME=/app
 
 # Expose port
 EXPOSE 5000
 
-# Start command with increased timeout for long-running scrapes
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/ || exit 1
+
+# Start command - CRITICAL: Use 0.0.0.0 not 127.0.0.1
 CMD gunicorn --bind 0.0.0.0:${PORT} \
     --workers 1 \
     --threads 4 \
     --timeout 1200 \
+    --worker-class sync \
+    --worker-tmp-dir /dev/shm \
     --access-logfile - \
     --error-logfile - \
-    --log-level info \
+    --log-level debug \
+    --preload \
     app:app
