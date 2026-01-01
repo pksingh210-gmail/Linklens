@@ -3,16 +3,17 @@
 from pathlib import Path
 import json
 import time
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+import os
+from playwright.sync_api import sync_playwright
 
 DATA_DIR = Path("data/linkedin")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def cookie_path_for_user(username: str) -> Path:
-    """Return path to store session cookie for a given username."""
+    """Return path to store li_at cookie for a given username."""
     safe_name = username.replace("@", "_at_").replace(".", "_dot_")
-    return DATA_DIR / f"session_{safe_name}.json"
+    return DATA_DIR / f"li_at_{safe_name}.json"
 
 
 class LinkedInLogin:
@@ -32,96 +33,95 @@ class LinkedInLogin:
         self.context = self.browser.new_context()
         self.page = self.context.new_page()
 
-    def login(self, username: str, password: str):
-        """Login to LinkedIn using cookies if present, otherwise username/password."""
-        cookie_file = cookie_path_for_user(username)
-
+    # ------------------ Cookie-only login ------------------
+    def login_with_cookie(self, username: str, li_at: str):
+        """Login using li_at cookie only (cloud-safe)."""
         if not self.browser:
             self.start_browser()
 
-        # --- Try to load cookies first ---
-        if cookie_file.exists():
-            try:
-                self.load_cookies(cookie_file)
-                if self.verify_login():
-                    self.logged_in = True
-                    if self.status_callback:
-                        self.status_callback(f"✅ Logged in using cloud cookies for {username}")
-                    return True
-                else:
-                    if self.status_callback:
-                        self.status_callback(f"⚠️ Cookies invalid/expired for {username}, doing full login")
-            except Exception as e:
-                if self.status_callback:
-                    self.status_callback(f"⚠️ Failed to load cookies: {e}, doing full login")
+        if not li_at:
+            raise ValueError("Missing li_at cookie for login")
 
-        # --- Full login with username/password ---
-        try:
-            self.page.goto("https://www.linkedin.com/login")
-            time.sleep(2)
-            self.page.fill("input#username", username)
-            self.page.fill("input#password", password)
-            self.page.click("button[type=submit]")
+        # Add cookie to browser context
+        self.context.add_cookies([{
+            "name": "li_at",
+            "value": li_at,
+            "domain": ".linkedin.com",
+            "path": "/",
+            "secure": True,
+            "httpOnly": True
+        }])
 
-            # wait for feed page or error
-            self.logged_in = self.wait_for_feed(timeout=20)
-        except PlaywrightTimeoutError:
-            self.logged_in = False
-        except Exception as e:
+        self.page.goto("https://www.linkedin.com/feed/", timeout=60000)
+        time.sleep(3)
+
+        if "/feed" in self.page.url:
+            self.logged_in = True
+            self.cookies = {"li_at": li_at}
+            self.save_cookie(username, li_at)
+            if self.status_callback:
+                self.status_callback(f"✅ Logged in using li_at cookie for {username}")
+        else:
             self.logged_in = False
             if self.status_callback:
-                self.status_callback(f"❌ Login exception: {e}")
+                self.status_callback(f"❌ li_at cookie rejected for {username}")
+            raise RuntimeError("li_at cookie rejected by LinkedIn")
 
-        # --- Save cookies if login successful ---
+    # ------------------ Save/load li_at cookie ------------------
+    def save_cookie(self, username: str, li_at: str):
+        """Save li_at cookie to file for a given user."""
+        path = cookie_path_for_user(username)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump({"li_at": li_at}, f)
+        if self.status_callback:
+            self.status_callback(f"💾 li_at cookie saved for {username} at {path}")
+
+    def load_cookie(self, username: str) -> str | None:
+        """Load li_at cookie for user if exists."""
+        path = cookie_path_for_user(username)
+        if path.exists():
+            with open(path, "r") as f:
+                data = json.load(f)
+                li_at = data.get("li_at")
+                if self.status_callback:
+                    self.status_callback(f"💾 Loaded li_at cookie for {username}")
+                return li_at
+        return None
+
+    # ------------------ Legacy: username/password login (optional) ------------------
+    def login_with_password(self, username: str, password: str):
+        """Fallback login for local/laptop use (not recommended in cloud)."""
+        if not self.browser:
+            self.start_browser()
+
+        self.page.goto("https://www.linkedin.com/login")
+        time.sleep(2)
+        self.page.fill("input#username", username)
+        self.page.fill("input#password", password)
+        self.page.click("button[type=submit]")
+
+        time.sleep(5)
+        self.logged_in = self.verify_login()
+
         if self.logged_in:
             self.cookies = self.context.cookies()
-            self.save_cookies(cookie_file)
             if self.status_callback:
-                self.status_callback(f"✅ Logged in successfully as {username}")
+                self.status_callback(f"✅ Logged in with password as {username}")
         else:
             if self.status_callback:
                 self.status_callback(f"❌ Login failed for {username}")
 
         return self.logged_in
 
-    def wait_for_feed(self, timeout=20):
-        """Wait for LinkedIn feed page to confirm login."""
-        start = time.time()
-        while time.time() - start < timeout:
-            self.page.goto("https://www.linkedin.com/feed/")
-            time.sleep(3)
-            if "feed" in self.page.url:
-                return True
-            # optionally check for login error messages here
-        return False
-
-    def load_cookies(self, path: Path):
-        """Load cookies from JSON file into the browser context."""
-        if path.exists():
-            with open(path, "r") as f:
-                cookies = json.load(f)
-            self.context.add_cookies(cookies)
-            self.cookies = cookies
-            if self.status_callback:
-                self.status_callback(f"💾 Loaded cookies from {path}")
-
-    def save_cookies(self, path: Path):
-        """Save current session cookies to JSON file."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(self.context.cookies(), f)
-        if self.status_callback:
-            self.status_callback(f"💾 Saved session cookie to {path}")
-
+    # ------------------ Verify login ------------------
     def verify_login(self):
-        """Check if user is logged in by visiting the feed."""
-        try:
-            self.page.goto("https://www.linkedin.com/feed/")
-            time.sleep(3)
-            return "feed" in self.page.url
-        except Exception:
-            return False
+        """Check if user is logged in by visiting feed."""
+        self.page.goto("https://www.linkedin.com/feed/")
+        time.sleep(3)
+        return "feed" in self.page.url
 
+    # ------------------ Close browser ------------------
     def close(self):
         """Close browser and context."""
         if self.context:
@@ -130,3 +130,5 @@ class LinkedInLogin:
             self.page.close()
         if self.browser:
             self.browser.close()
+
+
