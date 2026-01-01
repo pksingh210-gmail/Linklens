@@ -1,32 +1,67 @@
+# Use official Playwright image with Python
 FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
 
+# Set working directory
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install system dependencies (fonts + Playwright Linux deps)
+RUN apt-get update && apt-get install -y \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libxshmfence1 \
+    libgtk-3-0 \
+    libxss1 \
+    lsb-release \
+    wget \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
+# Copy requirements first for caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright browsers
+RUN playwright install chromium && \
+    playwright install-deps chromium
+
+# Copy application
 COPY . .
 
+# Create required directories
 RUN mkdir -p data/temp data/links data/results auth && \
-    chmod -R 755 data auth && \
-    echo '[]' > auth/users.json && chmod 644 auth/users.json
+    test -f auth/users.json || echo '[]' > auth/users.json && \
+    chmod -R 777 data auth
 
+# Syntax check
+RUN python -m py_compile app.py
+
+# Environment variables
 ENV FLASK_APP=app.py \
     PYTHONUNBUFFERED=1 \
     PORT=5000 \
-    HOME=/app
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 EXPOSE 5000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/health || exit 1
-
+# Start command
 CMD gunicorn --bind 0.0.0.0:${PORT} \
     --workers 1 \
-    --threads 4 \
-    --timeout 1200 \
-    --worker-class sync \
-    --worker-tmp-dir /dev/shm \
+    --threads 2 \
+    --timeout 1800 \
+    --graceful-timeout 120 \
     --access-logfile - \
     --error-logfile - \
     --log-level info \
