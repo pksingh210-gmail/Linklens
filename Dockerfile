@@ -1,10 +1,8 @@
 # Use official Playwright image with Python
 FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies (fonts + Playwright Linux deps)
 RUN apt-get update && apt-get install -y \
     fonts-liberation \
     fonts-noto-color-emoji \
@@ -26,29 +24,18 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for caching
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
-RUN playwright install chromium && \
-    playwright install-deps chromium
-
-# Copy application
 COPY . .
 
-# Create required directories
 RUN mkdir -p data/temp data/links data/results auth && \
     test -f auth/users.json || echo '[]' > auth/users.json && \
     chmod -R 777 data auth
 
-# Syntax check
 RUN python -m py_compile app.py
 
-# Environment variables
 ENV FLASK_APP=app.py \
     PYTHONUNBUFFERED=1 \
     PORT=5000 \
@@ -56,7 +43,6 @@ ENV FLASK_APP=app.py \
 
 EXPOSE 5000
 
-# Start command
 CMD gunicorn --bind 0.0.0.0:${PORT} \
     --workers 1 \
     --threads 2 \
@@ -66,3 +52,4 @@ CMD gunicorn --bind 0.0.0.0:${PORT} \
     --error-logfile - \
     --log-level info \
     app:app
+
