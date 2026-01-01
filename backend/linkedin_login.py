@@ -1,74 +1,93 @@
 # backend/linkedin_login.py
-import time
-import os
-import base64
+
 from pathlib import Path
+import json
+import time
 from playwright.sync_api import sync_playwright
+
+DATA_DIR = Path("data/linkedin")
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def cookie_path_for_user(username: str) -> Path:
+    """Return path to store session cookie for a given username."""
+    safe_name = username.replace("@", "_at_").replace(".", "_dot_")
+    return DATA_DIR / f"session_{safe_name}.json"
+
 
 class LinkedInLogin:
     def __init__(self, headless=True, status_callback=None):
         self.headless = headless
-        self.status_cb = status_callback
+        self.status_callback = status_callback
         self.logged_in = False
         self.cookies = {}
+        self.browser = None
+        self.context = None
+        self.page = None
 
-    def log(self, msg):
-        if self.status_cb:
-            self.status_cb(msg)
+    def start_browser(self):
+        """Start Playwright browser and context."""
+        pw = sync_playwright().start()
+        self.browser = pw.chromium.launch(headless=self.headless)
+        self.context = self.browser.new_context()
+        self.page = self.context.new_page()
+
+    def login(self, username: str, password: str):
+        """Login to LinkedIn using username/password."""
+        if not self.browser:
+            self.start_browser()
+
+        self.page.goto("https://www.linkedin.com/login")
+        time.sleep(2)
+        self.page.fill("input#username", username)
+        self.page.fill("input#password", password)
+        self.page.click("button[type=submit]")
+
+        time.sleep(5)  # wait for redirect
+        self.logged_in = self.verify_login()
+
+        if self.logged_in:
+            self.cookies = self.context.cookies()
+            if self.status_callback:
+                self.status_callback(f"✅ Logged in successfully as {username}")
         else:
-            print(msg)
+            if self.status_callback:
+                self.status_callback(f"❌ Login failed for {username}")
 
-    def login(self, username=None, password=None):
-        from playwright.sync_api import sync_playwright, TimeoutError
+        return self.logged_in
 
-        # Try using cookie first from environment
-        env_var_name = f"LINKEDIN_SESSION_{username.split('@')[0].upper()}" if username else None
-        saved_cookie = os.environ.get(env_var_name)
+    def load_cookies(self, path: Path):
+        """Load cookies from JSON file into the browser context."""
+        if path.exists():
+            with open(path, "r") as f:
+                cookies = json.load(f)
+            self.context.add_cookies(cookies)
+            self.cookies = cookies
+            if self.status_callback:
+                self.status_callback(f"💾 Loaded cookies from {path}")
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=self.headless)
-            context = browser.new_context()
+    def save_cookies(self, path: Path):
+        """Save current session cookies to JSON file."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(self.context.cookies(), f)
+        if self.status_callback:
+            self.status_callback(f"💾 Saved session cookie to {path}")
 
-            # Load cookie if exists
-            if saved_cookie:
-                import json
-                try:
-                    cookies = json.loads(saved_cookie)
-                    context.add_cookies(cookies)
-                    self.log("✅ Loaded cookies from env")
-                except Exception as e:
-                    self.log(f"⚠️ Failed to load cookies: {e}")
+    def verify_login(self):
+        """Check if user is logged in by visiting the feed."""
+        self.page.goto("https://www.linkedin.com/feed/")
+        time.sleep(3)
+        return "feed" in self.page.url
 
-            page = context.new_page()
-            try:
-                page.goto("https://www.linkedin.com/login", timeout=120_000)
+    def close(self):
+        """Close browser and context."""
+        if self.context:
+            self.context.close()
+        if self.page:
+            self.page.close()
+        if self.browser:
+            self.browser.close()
 
-                # If username/password provided, perform login
-                if username and password:
-                    page.fill('input#username', username)
-                    page.fill('input#password', password)
-                    page.click('button[type="submit"]')
 
-                    # Wait for successful login element
-                    page.wait_for_selector('input[placeholder="Search"]', timeout=120_000)
-                    self.log("✅ Login successful with username/password")
-
-                    # Save cookies for future sessions
-                    cookies = context.cookies()
-                    self.cookies = {c['name']: c['value'] for c in cookies}
-                    self.log("💾 Cookies saved for session")
-
-                else:
-                    # Check if cookies worked
-                    if page.url.startswith("https://www.linkedin.com/feed"):
-                        self.log("✅ Logged in using cookies")
-                        self.logged_in = True
-
-                self.logged_in = True
-
-            except TimeoutError:
-                self.log("❌ Login failed: Timeout")
-                self.logged_in = False
-            finally:
-                browser.close()
 
