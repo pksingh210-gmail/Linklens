@@ -250,6 +250,13 @@ def enrich_df_with_contact_info(df, linkedin_cookies, status_cb=None, max_retrie
     return df
 
 # ---------------- Background Scraper (updated) ----------------
+# Proxy configuration (optional but recommended for cloud)
+PROXY_CONFIG = {
+    'server': os.environ.get('PROXY_SERVER'),
+    'username': os.environ.get('PROXY_USERNAME'),
+    'password': os.environ.get('PROXY_PASSWORD')
+} if os.environ.get('PROXY_SERVER') else None
+
 def background_linkedin_scraper(params):
     global linkedin_results, scraper_active
 
@@ -261,10 +268,10 @@ def background_linkedin_scraper(params):
 
     linkedin_results = []
     push_status("🔍 Starting LinkedIn Scraper...")
-
+    
     login_scraper = None
-    linkedin_cookies = {}  # Initialize here
-
+    linkedin_cookies = {}
+    
     try:
         username = params.get("username")
         password = params.get("password")
@@ -281,39 +288,75 @@ def background_linkedin_scraper(params):
                 scraper_active = False
             return
 
-        # ------------------ LOGIN ------------------
-        login_scraper = LinkedInLogin(headless=headless, status_callback=push_status)
-        success = login_scraper.login(username, password)
-
-        if not success:
-            push_status("❌ Login failed. Stopping scraper.")
+        # ------------------ LOGIN with Enhanced Error Handling ------------------
+        try:
+            # Show proxy status
+            if PROXY_CONFIG:
+                push_status(f"🌐 Using proxy: {PROXY_CONFIG['server']}")
+            else:
+                push_status("⚠️ No proxy configured - may face blocks on cloud servers")
+            
+            login_scraper = LinkedInLogin(
+                headless=headless, 
+                status_callback=push_status,
+                proxy=PROXY_CONFIG  # Pass proxy config
+            )
+            
+            login_scraper.login(username, password)
+            
+            # Check login success
+            if not login_scraper.logged_in:
+                push_status("❌ Login failed. Cannot proceed.")
+                push_status("💡 Tips:")
+                push_status("   • Try with headless=False to see what's happening")
+                push_status("   • Configure a residential proxy for cloud deployments")
+                push_status("   • Check if account needs verification")
+                with scraper_lock:
+                    scraper_active = False
+                return
+            
+            # ✅ Extract cookies AFTER successful login
+            linkedin_cookies = login_scraper.cookies
+            
+            # Verify critical cookies are present
+            if not linkedin_cookies:
+                push_status("⚠️ Warning: No cookies extracted!")
+            elif not linkedin_cookies.get('li_at'):
+                push_status("⚠️ Warning: Missing li_at authentication cookie")
+                push_status("   Contact enrichment may fail")
+            else:
+                push_status(f"✅ Login successful - {len(linkedin_cookies)} cookies ready")
+                
+        except Exception as login_error:
+            push_status(f"❌ Login error: {str(login_error)}")
+            push_status("💡 This is common on cloud servers without proxy")
+            
+            # Show traceback for debugging
+            import traceback
+            push_status(f"🔍 Debug trace: {traceback.format_exc()[:200]}")
+            
             with scraper_lock:
                 scraper_active = False
-            return  # spinner stops because login failed
-
-        linkedin_cookies = login_scraper.cookies
-
-        push_status(f"✅ Login successful for {username}")
+            return
 
         # ------------------ COLLECT LINKS ------------------
         ensure_data_folders()
-
         links = []
 
+        # Use uploaded Excel if provided and mode is HTML Only or HTML+Data
         if excel_path and mode in ["html_only", "html_and_data"]:
             try:
                 df_links = pd.read_excel(excel_path)
                 if "ProfileLink" in df_links.columns:
                     links = df_links["ProfileLink"].dropna().tolist()
+                    push_status(f"📥 Loaded {len(links)} links from Excel")
+                else:
+                    push_status("⚠️ Excel must have 'ProfileLink' column")
             except Exception as e:
-                push_status(f"❌ Failed to read Excel file: {e}")
-                with scraper_lock:
-                    scraper_active = False
-                return
+                push_status(f"❌ Failed to read Excel: {e}")
 
-        # Fallback: collect links via LinkedIn search
+        # Fallback: collect links via LinkedIn search if empty
         if not links and mode in ["full", "html_only", "html_and_data"]:
-            from backend.linkedin_search import LinkedInSearch
             search_scraper = LinkedInSearch(login_scraper.page, status_callback=push_status)
             links = search_scraper.collect_profile_links(
                 job_title=job_title,
@@ -321,50 +364,133 @@ def background_linkedin_scraper(params):
                 max_results=int(params.get("max_results", 50)),
                 city=city
             )
-
+            
+            # Save collected links
             if links:
                 links_filename = timestamped_filename(f"links_{job_title}_{city}_{country}", ".xlsx")
                 links_path = LINKS_DIR / links_filename
-                pd.DataFrame({"ProfileLink": links}).to_excel(links_path, index=False)
-                push_status(f"💾 Saved {len(links)} links to: {links_path}")
+                df_links = pd.DataFrame({"ProfileLink": links})
+                df_links.to_excel(links_path, index=False)
+                push_status(f"💾 Saved {len(links)} links")
 
-        # ------------------ HTML + DATA ------------------
-        if links and mode in ["html_only", "html_and_data", "full"]:
-            from backend.linkedin_html import LinkedInHTML
-            html_scraper = LinkedInHTML(login_scraper.page, status_callback=push_status)
-            html_count = 0
-            for i, link in enumerate(links):
-                html_path = html_scraper.save_profile_html(link, TEMP_DIR)
-                if html_path:
-                    html_count += 1
-                else:
-                    push_status(f"❌ Failed to save HTML ({i+1}/{len(links)})")
-            push_status(f"💾 {html_count} HTML profiles saved in {TEMP_DIR}")
+        # ------------------ PROCESS BASED ON MODE ------------------
+        if mode == "html_only":
+            if links:
+                html_scraper = LinkedInHTML(login_scraper.page, status_callback=push_status)
+                html_count = 0
+                for i, link in enumerate(links):
+                    html_path = html_scraper.save_profile_html(link, TEMP_DIR)
+                    if html_path:
+                        html_count += 1
+                push_status(f"💾 Saved {html_count} HTML files")
+            else:
+                push_status("⚠️ No links to process")
 
-        if mode in ["data_only", "html_and_data", "full"]:
-            from backend.linkedin_data_extract import parse_all_html
+        elif mode == "data_only":
+            push_status("📄 Parsing existing HTML...")
             df = parse_all_html(role=job_title, loc=city or country)
-
+            
             # Enrich with contact info
-            from backend.linkedin_contact_info import get_contact_info_for_profile
-            df = enrich_df_with_contact_info(df, linkedin_cookies=linkedin_cookies, status_cb=push_status)
+            if linkedin_cookies and linkedin_cookies.get('li_at'):
+                push_status(f"📇 Enriching {len(df)} profiles with contact info...")
+                df = enrich_df_with_contact_info(
+                    df, 
+                    linkedin_cookies=linkedin_cookies, 
+                    status_cb=push_status
+                )
+            else:
+                push_status("⚠️ Skipping contact enrichment (no valid cookies)")
 
             linkedin_results.extend(df.to_dict(orient="records"))
             results_filename = timestamped_filename(f"linkedin_results_{job_title}_{city}_{country}", ".xlsx")
             results_path = RESULTS_DIR / results_filename
             df.to_excel(results_path, index=False)
-            push_status(f"💾 Data extraction complete: {results_path}")
+            push_status(f"💾 Results saved: {results_filename}")
+            
+            with app.app_context():
+                push_status(f"DOWNLOAD:{url_for('download_file', folder='results', filename=results_filename)}")
             push_status("RESULTS_READY")
 
-        push_status("✅ Scraping completed successfully!")
+        elif mode == "html_and_data":
+            # Save HTML first
+            if links:
+                html_scraper = LinkedInHTML(login_scraper.page, status_callback=push_status)
+                html_count = 0
+                for link in links:
+                    html_path = html_scraper.save_profile_html(link, TEMP_DIR)
+                    if html_path:
+                        html_count += 1
+                push_status(f"💾 Saved {html_count} HTML files")
+            
+            # Then parse and enrich
+            push_status("📄 Parsing HTML...")
+            df = parse_all_html(role=job_title, loc=city or country)
+            
+            if linkedin_cookies and linkedin_cookies.get('li_at'):
+                push_status(f"📇 Enriching {len(df)} profiles...")
+                df = enrich_df_with_contact_info(
+                    df, 
+                    linkedin_cookies=linkedin_cookies, 
+                    status_cb=push_status
+                )
+            else:
+                push_status("⚠️ Skipping contact enrichment (no valid cookies)")
+
+            linkedin_results.extend(df.to_dict(orient="records"))
+            results_filename = timestamped_filename(f"linkedin_results_{job_title}_{city}_{country}", ".xlsx")
+            results_path = RESULTS_DIR / results_filename
+            df.to_excel(results_path, index=False)
+            push_status(f"💾 Results saved: {results_filename}")
+            
+            with app.app_context():
+                push_status(f"DOWNLOAD:{url_for('download_file', folder='results', filename=results_filename)}")
+            push_status("RESULTS_READY")
+
+        else:  # Full mode
+            if links:
+                html_scraper = LinkedInHTML(login_scraper.page, status_callback=push_status)
+                html_count = 0
+                for link in links:
+                    html_path = html_scraper.save_profile_html(link, TEMP_DIR)
+                    if html_path:
+                        html_count += 1
+                push_status(f"💾 Saved {html_count} HTML files")
+
+            push_status("📄 Parsing data...")
+            df = parse_all_html(role=job_title, loc=city or country)
+            
+            if linkedin_cookies and linkedin_cookies.get('li_at'):
+                push_status(f"📇 Enriching {len(df)} profiles...")
+                df = enrich_df_with_contact_info(
+                    df, 
+                    linkedin_cookies=linkedin_cookies, 
+                    status_cb=push_status
+                )
+            else:
+                push_status("⚠️ Skipping contact enrichment (no valid cookies)")
+
+            linkedin_results.extend(df.to_dict(orient="records"))
+            results_filename = timestamped_filename(f"linkedin_results_{job_title}_{city}_{country}", ".xlsx")
+            results_path = RESULTS_DIR / results_filename
+            df.to_excel(results_path, index=False)
+            
+            with app.app_context():
+                push_status(f"DOWNLOAD:{url_for('download_file', folder='results', filename=results_filename)}")
+            push_status("RESULTS_READY")
+
+        push_status("✅ Scraping completed!")
 
     except Exception as e:
-        push_status(f"❌ Error: {e}")
-        push_status(f"❌ Traceback: {traceback.format_exc()}")
-
+        push_status(f"❌ Error: {str(e)}")
+        import traceback
+        push_status(f"🔍 Trace: {traceback.format_exc()[:300]}")
+        
     finally:
         if login_scraper:
-            login_scraper.close()
+            try:
+                login_scraper.close()
+            except:
+                pass
         with scraper_lock:
             scraper_active = False
             
@@ -574,6 +700,7 @@ signal.signal(signal.SIGTERM, handle_signal)  # Kill process
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
 
 
 
